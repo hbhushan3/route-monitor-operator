@@ -63,7 +63,7 @@ func (client *APIClient) makeRequest(method, path string, body interface{}) (*ht
 	return client.httpClient.Do(req)
 }
 
-func createDynatraceHTTPMonitor(ctx context.Context, client *APIClient, monitorName, url string) (string, error) {
+func (client *APIClient) createDynatraceHTTPMonitor(ctx context.Context, monitorName, url string) (string, error) {
 	monitorConfig := map[string]interface{}{
 		// "name":         monitorName,
 		// "type":         "http",
@@ -143,7 +143,7 @@ func createDynatraceHTTPMonitor(ctx context.Context, client *APIClient, monitorN
 	return monitorID, nil
 }
 
-func deleteDynatraceHTTPMonitor(client *APIClient, monitorID string) error {
+func (client *APIClient) deleteDynatraceHTTPMonitor(ctx context.Context, monitorID string) error {
 	path := fmt.Sprintf("/synthetic/monitors/%s", monitorID)
 
 	resp, err := client.makeRequest("DELETE", path, nil)

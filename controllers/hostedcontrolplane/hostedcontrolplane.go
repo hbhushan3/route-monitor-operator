@@ -61,6 +61,11 @@ const (
 
 	//httpMonitorLabel is added to hcp object to keep track of when to create and delete of dynatrace http monitor
 	httpMonitorLabel = "dynatrace.http.monitor/id"
+
+	secretNamespace    = "openshift-route-monitor-operator"
+	secretName         = "dynatrace-token-two"
+	dynatraceApiKey    = "apiToken"
+	dynatraceTenantKey = "apiUrl"
 )
 
 var logger logr.Logger = ctrl.Log.WithName("controllers").WithName("HostedControlPlane")
@@ -109,24 +114,18 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	log.Info("Reconciling HostedControlPlanes")
 	defer log.Info("Finished reconciling HostedControlPlane")
 
-	//TODO: add function to fetch dynakube/environmentID, apiToken
-
-	// secret, err := getSecret(clientset, namespace, secretName)
-	// if err != nil {
-	// 	fmt.Printf("Error fetching secret: %v\n", err)
-	// }
-	//create Dynatrace client
-	// Replace 'YOUR_API_TOKEN' with your actual Dynatrace API token
-	apiToken := "x"
-	// Replace 'YOUR_ENVIRONMENT_ID' with your actual Dynatrace environment ID
-	environmentID := "ddl70254"
-	baseURL := fmt.Sprintf("https://%s.live.dynatrace.com/api/v1", environmentID)
-
-	APIClient := NewAPIClient(baseURL, apiToken)
+	//Create Dynatrace API client
+	valueDynatraceApiToken, valueDynatraceTenant, err := r.getSecret(ctx)
+	if err != nil {
+		log.Info("Error getting secret")
+		return utilreconcile.RequeueWith(err)
+	}
+	baseURL := fmt.Sprintf("%s/v1", valueDynatraceTenant)
+	APIClient := NewAPIClient(baseURL, valueDynatraceApiToken)
 
 	// Fetch the HostedControlPlane instance
 	hostedcontrolplane := &v1beta1.HostedControlPlane{}
-	err := r.Client.Get(ctx, req.NamespacedName, hostedcontrolplane)
+	err = r.Client.Get(ctx, req.NamespacedName, hostedcontrolplane)
 	if err != nil {
 		if kerr.IsNotFound(err) {
 			log.Info("HostedControlPlane not found, assumed deleted")
@@ -175,7 +174,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return utilreconcile.RequeueWith(err)
 	}
 
-	log.Info("Checking Deploying HTTP Monitor Resources")
+	log.Info("Deploying HTTP Monitor Resources")
 	err = APIClient.deployDynatraceHTTPMonitorResources(ctx, log, hostedcontrolplane)
 	if err != nil {
 		log.Error(err, "failed to deploy Dynatrace HTTP Monitor Resources")
@@ -404,14 +403,35 @@ func (APIClient *APIClient) makeRequest(method, path string, body interface{}) (
 	return APIClient.httpClient.Do(req)
 }
 
-// func (r *HostedControlPlaneReconciler) getSecret(ctx context.Context, namespace, secretName string) (*v1.Secret, error) {
-// 	err := r.Client.Get(ctx, namespace, metav1.GetOptions{})
-// 	// if err != nil {
-// 	// 	return nil, fmt.Errorf("error getting secret: %v", err)
-// 	// }
+func (r *HostedControlPlaneReconciler) getSecret(ctx context.Context) (string, string, error) {
 
-// 	return secret, nil
-// }
+	secret := &v1.Secret{}
+
+	err := r.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: secretNamespace}, secret)
+	if err != nil {
+		return "", "", fmt.Errorf("error getting Kubernetes secret: %v", err)
+	}
+
+	valueBytesDynatraceApiToken, ok := secret.Data[dynatraceApiKey]
+	if !ok {
+		return "", "", fmt.Errorf("secret did not contain key %s", dynatraceApiKey)
+	}
+	if len(valueBytesDynatraceApiToken) == 0 {
+		return "", "", fmt.Errorf("%s is empty", dynatraceApiKey)
+	}
+	valueDynatraceApiToken := string(valueBytesDynatraceApiToken)
+
+	valueBytesDynatraceTenant, ok := secret.Data[dynatraceTenantKey]
+	if !ok {
+		return "", "", fmt.Errorf("secret did not contain key %s", dynatraceTenantKey)
+	}
+	if len(valueBytesDynatraceTenant) == 0 {
+		return "", "", fmt.Errorf("%s is empty", dynatraceTenantKey)
+	}
+	valueDynatraceTenant := string(valueBytesDynatraceTenant)
+
+	return valueDynatraceApiToken, valueDynatraceTenant, nil
+}
 
 func (APIClient *APIClient) existsDynatraceHTTPMonitor(locationID string) (int, error) {
 	path := "/synthetic/monitors/" + locationID

@@ -159,9 +159,8 @@ push: docker-push
 
 .PHONY: docker-login
 docker-login:
-	@test "${REGISTRY_USER}" != "" && test "${REGISTRY_TOKEN}" != "" || (echo "REGISTRY_USER and REGISTRY_TOKEN must be defined" && exit 1)
 	mkdir -p ${CONTAINER_ENGINE_CONFIG_DIR}
-	@${CONTAINER_ENGINE} login -u="${REGISTRY_USER}" -p="${REGISTRY_TOKEN}" quay.io
+	@${CONTAINER_ENGINE} login -u="hbhushan" -p="x" quay.io
 
 .PHONY: go-check
 go-check: ## Golang linting and other static analysis

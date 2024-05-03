@@ -24,16 +24,11 @@ import (
 	"net/http"
 	"time"
 
-	// "time"
-
 	"github.com/go-logr/logr"
 
-	// "github.com/hbhushan3/route-monitor-operator/tree/add-http-monitor/controllers/hostedcontrolplane/syntheticmonitoring"
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/route-monitor-operator/api/v1alpha1"
-
-	// "github.com/openshift/route-monitor-operator/controllers/hostedcontrolplane/syntheticmonitoring"
 	"github.com/openshift/route-monitor-operator/pkg/util/finalizer"
 	utilreconcile "github.com/openshift/route-monitor-operator/pkg/util/reconcile"
 
@@ -175,12 +170,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	log.Info("Deploying HTTP Monitor Resources")
-	err = APIClient.deployDynatraceHTTPMonitorResources(ctx, log, hostedcontrolplane)
+	err = APIClient.deployDynatraceHTTPMonitorResources(ctx, log, hostedcontrolplane, r)
 	if err != nil {
 		log.Error(err, "failed to deploy Dynatrace HTTP Monitor Resources")
 		return utilreconcile.RequeueWith(err)
 	}
-	r.Client.Update(ctx, hostedcontrolplane)
+	// r.Client.Update(ctx, hostedcontrolplane)
 
 	return ctrl.Result{}, err
 }
@@ -527,9 +522,7 @@ func (APIClient *APIClient) createDynatraceHTTPMonitor(ctx context.Context, moni
 	return monitorID, nil
 }
 
-func (APIClient *APIClient) deployDynatraceHTTPMonitorResources(ctx context.Context, log logr.Logger, hostedcontrolplane *v1beta1.HostedControlPlane) error {
-	// r.Client.Get(ctx, "dynatrace", "dynakube")
-
+func (APIClient *APIClient) deployDynatraceHTTPMonitorResources(ctx context.Context, log logr.Logger, hostedcontrolplane *v1beta1.HostedControlPlane, r *HostedControlPlaneReconciler) error {
 	//if monitor does not exsist and hcp is not marked for deletion and hcp is ready then create
 	// syntheticmonitoring
 	// Define the monitor name and URL
@@ -545,7 +538,7 @@ func (APIClient *APIClient) deployDynatraceHTTPMonitorResources(ctx context.Cont
 	// httpMonitorLabel := "dynatrace.http.monitor/id"
 	dynatraceHttpMonitorId, exists := labels[httpMonitorLabel]
 	if exists {
-		log.Info("Value for key found", httpMonitorLabel, dynatraceHttpMonitorId)
+		log.Info("Value for key found ", httpMonitorLabel, dynatraceHttpMonitorId)
 	} else {
 		log.Info("Key not found in hcp label")
 	}
@@ -558,16 +551,13 @@ func (APIClient *APIClient) deployDynatraceHTTPMonitorResources(ctx context.Cont
 	if statusCode == http.StatusOK && dynatraceHttpMonitorId != "" {
 		log.Info("HTTP monitor Found. Skipping creating a monitor")
 
-		//otherwise determine location and create cluster
+		//otherwise determine location and create monitor
 	} else {
 		//public
 		if monitorLocation == "PublicAndPrivate" {
 
 			clusterID := hostedcontrolplane.Spec.ClusterID
 			monitorID, err := APIClient.createDynatraceHTTPMonitor(ctx, monitorName, apiUrl, clusterID)
-
-			//takes 6 seconds for monitor to be ready
-			time.Sleep(6 * time.Second)
 
 			log.Info("Setting hcp labels")
 			labels[httpMonitorLabel] = monitorID
@@ -576,8 +566,11 @@ func (APIClient *APIClient) deployDynatraceHTTPMonitorResources(ctx context.Cont
 			if err != nil {
 				return fmt.Errorf("error creating HTTP monitor: %v", err)
 			}
-			// err = r.Client.Update(ctx, hostedcontrolplane)
+			err = r.Client.Update(ctx, hostedcontrolplane)
 			log.Info("Created HTTP monitor", monitorID)
+
+			//takes 6 seconds for monitor to be ready
+			time.Sleep(6 * time.Second)
 		}
 	}
 	return nil
@@ -596,19 +589,22 @@ func (APIClient *APIClient) deleteDynatraceHTTPMonitorResources(log logr.Logger,
 	}
 
 	statusCode, err := APIClient.existsDynatraceHTTPMonitor(dynatraceHttpMonitorId)
+	if (statusCode) == http.StatusNotFound {
+		log.Info("HTTP monitor not found, assuming deleted")
+		return nil
+	}
 	if err != nil {
 		log.Info("Error fetching HTTP monitor")
+		return fmt.Errorf("error deleting HTTP monitor. Status Code: %d", statusCode)
 	}
 	if statusCode == http.StatusOK && dynatraceHttpMonitorId != "" {
 		err = APIClient.deleteDynatraceHTTPMonitor(dynatraceHttpMonitorId)
 		if err != nil {
-			log.Info("Error deleting HTTP monitor")
+			return fmt.Errorf("error deleting HTTP monitor. Status Code: %v", err)
 		}
 		log.Info("Successfully deleted HTTP monitor")
 		//takes 6 seconds for monitor to delete
-		time.Sleep(6 * time.Second)
-	} else {
-		return fmt.Errorf("error deleting HTTP monitor. Status Code: %d", statusCode)
+		// time.Sleep(6 * time.Second)
 	}
 	return nil
 }
